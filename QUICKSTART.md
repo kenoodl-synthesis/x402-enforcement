@@ -22,7 +22,7 @@ want to ship right now, follow the seven steps below.
 ## Step 1 — Get the code
 
 ```bash
-git clone https://github.com/kkenoodl-synthesis/x402-enforcement.git
+git clone https://github.com/kenoodl-synthesis/x402-enforcement.git
 cd x402-enforcement
 ```
 
