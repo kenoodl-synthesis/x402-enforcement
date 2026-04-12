@@ -22,7 +22,7 @@ want to ship right now, follow the seven steps below.
 ## Step 1 — Get the code
 
 ```bash
-git clone https://github.com/kevinhoff/x402-enforcement.git
+git clone https://github.com/kkenoodl-synthesis/x402-enforcement.git
 cd x402-enforcement
 ```
 
@@ -34,7 +34,7 @@ Or, if you already have a Foundry project and want to treat this as a
 dependency:
 
 ```bash
-forge install kevinhoff/x402-enforcement
+forge install kenoodl-synthesis/x402-enforcement
 ```
 
 All three paths work. Pick whichever fits your workflow.
