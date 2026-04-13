@@ -9,6 +9,72 @@ without any off-chain trust, reputation layer, or human intermediary.
 
 ---
 
+## Live on Base mainnet
+
+The primitive has been **deployed to Base mainnet and exercised end-to-end by an autonomous agent** as of April 12, 2026. Every claim in this README is verifiable on-chain in under 60 seconds with a single `eth_call` from any RPC node.
+
+| Component | Address | Basescan |
+|---|---|---|
+| `OfferRegistry` | `0x359784adD213F2097D0F071310e82cD8f9a2A909` | [view](https://basescan.org/address/0x359784adD213F2097D0F071310e82cD8f9a2A909) |
+| `StubSettlementVerifier` | `0x874c16A19FAAd011cfd1572F8BD28eD75D1Bb473` | [view](https://basescan.org/address/0x874c16A19FAAd011cfd1572F8BD28eD75D1Bb473) |
+
+**Canonical kenoodl synthesis offers registered in the OfferRegistry:**
+
+| Token | Price | offerHash | Max context | Max latency |
+|---|---|---|---|---|
+| USDC on Base (`0x833589fC…02913`) | 1 USDC flat | `0xd4a2ba4c4fb08eb915d513cdf8691c20bdf8a8bc67528274c2792c44a579947e` | 45,000 chars | 300 seconds |
+| Native ETH | 0.0004 ETH | `0x5a6f21be44d456d9f75f667659c628cec24be31694d4cd7f170df1d28f9ee894` | 45,000 chars | 300 seconds |
+
+Seller wallet: `0x3A7292b88471691946D8D8856925e22246bed743` (the kenoodl stealth door wallet)
+
+**Verify the ETH canonical offer yourself right now** (no installation, works in any terminal with curl):
+
+```bash
+# Call OfferRegistry.verifyOffer(bytes32) on Base mainnet via public RPC
+curl -s -X POST https://mainnet.base.org \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x359784adD213F2097D0F071310e82cD8f9a2A909","data":"0x80c107d65a6f21be44d456d9f75f667659c628cec24be31694d4cd7f170df1d28f9ee894"},"latest"],"id":1}'
+```
+
+The returned hex bytes decode to the byte-exact canonical offer JSON:
+
+```json
+{"amount":"400000000000000","token":"0x0000000000000000000000000000000000000000","maxLatency":300,"maxRetries":3,"maxContextChars":45000,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}
+```
+
+Keccak-256 of those exact bytes equals the `offerHash`, proving the registry has not been tampered with and the terms are the ones the seller committed to.
+
+**First agent settlement (the first pheromone trail):** [`0x9dd62ca5…5ffe464`](https://basescan.org/tx/0x9dd62ca56cfa4b0e2f68791529fbe83ac2c533b3c8a42b327422802645ffe464) — an autonomous agent named k executed the full flow (fetch `ai.json`, `eth_call verifyOffer`, sign payment, POST tx hash, poll result) and received synthesis content back. Zero interactive auth. Zero account creation. Zero HTTP trust required.
+
+---
+
+## Refund guarantee (added April 12, 2026)
+
+The primitive guarantees: **payment + delivery OR payment + automatic on-chain refund. Never just payment with no outcome.**
+
+If the seller's synthesis queue errors internally after the agent's payment is verified, the endpoint automatically triggers an on-chain refund from the seller wallet back to the paying wallet within 30 to 120 seconds. No escrow logic, no customer service, no recovery protocol. The funds are financially reversible on any seller-side failure.
+
+Verified via two backfill refunds for failed attempts during the initial deploy session:
+
+- Refund 1: [`0x7df56663…a8afa8e3`](https://basescan.org/tx/0x7df566639b8bb2551e64a4ad2227910b67dee92808a36781896da6dda8afa8e3)
+- Refund 2: [`0x6c4093ac…03cffd39e`](https://basescan.org/tx/0x6c4093acb320f780a8a487a9ebd77d273d28d7b71ee5682f00d3ead03cffd39e)
+
+Agents detect refunds by polling `/api/x402/status/{jobId}`. Refunded error responses include `refundTxHash` and `refunded: true` fields pointing at the on-chain refund transaction. Agents can also watch their paying wallet directly for an incoming transfer from the seller address.
+
+**The refund guarantee is documented in three independent discovery surfaces** so any agent arriving via any path sees the contract before committing a single wei:
+
+1. The 402 response body of the kenoodl x402 v2 endpoint
+2. The `kenoodl.com/.well-known/ai.json` discovery surface (under `contract_settlement_proof.refund_guarantee`)
+3. This README
+
+**Expected timing budget for agents:**
+
+- Synthesis normal completion: 30 to 90 seconds, 3 minutes maximum
+- Refund on error: 30 to 120 seconds after error is recorded
+- Total decision budget: 5 minutes end-to-end between sending payment and knowing outcome (delivered OR refunded)
+
+---
+
 ## What this is
 
 x402 (Coinbase's payment protocol for AI agents) settles the **value** of a
