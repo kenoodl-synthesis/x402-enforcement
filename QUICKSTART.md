@@ -11,7 +11,23 @@ want to ship right now, follow the seven steps below.
 
 ---
 
+## Two paths to walkable door
+
+**Path A (fastest — 5 minutes):** Register your offer against the **canonical kenoodl OfferRegistry already deployed on Base mainnet**. No contracts to deploy, no gas for deployment, just register your offer and start pointing agents at it. This is the right path if you want to share an ecosystem-wide registry with kenoodl and other builders.
+
+- Canonical OfferRegistry on Base mainnet: [`0x359784adD213F2097D0F071310e82cD8f9a2A909`](https://basescan.org/address/0x359784adD213F2097D0F071310e82cD8f9a2A909)
+- Canonical StubSettlementVerifier on Base mainnet: [`0x874c16A19FAAd011cfd1572F8BD28eD75D1Bb473`](https://basescan.org/address/0x874c16A19FAAd011cfd1572F8BD28eD75D1Bb473)
+
+Skip to **Step 4** below (register your offer) and use the canonical addresses above for `$REGISTRY_ADDRESS` and `$VERIFIER_ADDRESS`. Steps 1-3 are only for Path B.
+
+**Path B (self-hosted — 15 minutes):** Deploy your own OfferRegistry and StubSettlementVerifier. Use this if you want full control over the registry governance, want to run on a different chain, or just prefer not to depend on an existing deployment. Follow all seven steps below.
+
+---
+
 ## What you need
+
+- **Path A only:** a Base wallet with ~$0.01 of Base ETH for a single `registerOffer` transaction, and a Base RPC endpoint (public works — `https://base.llamarpc.com` is fine)
+- **Path B only:** Foundry installed (`curl -L https://foundry.paradigm.xyz | bash && foundryup`) plus ~$5 of Base ETH for deployment gas, or free Base Sepolia ETH from a faucet
 
 - **Foundry installed.** One command: `curl -L https://foundry.paradigm.xyz | bash && foundryup`
 - **A Base wallet with a private key.** If you already run any Base endpoint, you have this.
@@ -83,32 +99,55 @@ Record both addresses. You will need them in Step 4 and Step 5.
 
 ## Step 4 — Register your canonical offer
 
-Decide what you're selling. Here is a synthesis-service example; replace
-the fields with whatever your service actually provides:
+Decide what you're selling. Here is the exact canonical offer kenoodl registered for its USDC synthesis door on Base mainnet. Use it as a template; replace the fields with whatever your service actually provides:
 
 ```json
-{"amount":"10000000000000000","maxLatency":300,"maxRetries":3,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}
+{"amount":"1000000","token":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","maxLatency":300,"maxRetries":3,"maxContextChars":45000,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}
 ```
 
-- `amount` — price in the smallest token unit (wei for ETH, 6-decimal base for USDC)
+- `amount` — price in the smallest token unit (wei for native ETH, 6-decimal base for USDC)
+- `token` — the ERC-20 token contract address (use `0x0000000000000000000000000000000000000000` for native ETH)
 - `maxLatency` — seconds until delivery is considered late
 - `maxRetries` — how many times your service can retry before permanent failure
+- `maxContextChars` — the maximum input payload size the offer commits to (prevents price arbitrage on flat-rate offers)
 - `serviceType` — a short identifier of what you sell (`synthesis`, `data-feed`, `compute-gpu`, `credential-kyc`, etc.)
 - `termsHash` — any service-specific terms hashed (or zero if you have none yet)
+
+**Field order is load-bearing.** The `offerHash` is Keccak-256 of the byte-exact JSON with fields in this exact order and no whitespace. If you reorder or add whitespace, you get a different hash that will not match the registered offer.
 
 Compute the hash (this is your `offerHash`):
 
 ```bash
-cast keccak '{"amount":"10000000000000000","maxLatency":300,"maxRetries":3,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}'
+cast keccak '{"amount":"1000000","token":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","maxLatency":300,"maxRetries":3,"maxContextChars":45000,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}'
 ```
 
-Register the offer:
+For the exact JSON above you should get:
+
+```
+0xd4a2ba4c4fb08eb915d513cdf8691c20bdf8a8bc67528274c2792c44a579947e
+```
+
+That is the real kenoodl USDC canonical offer hash, already registered on Base mainnet. **If you are following Path A, you do not need to register this offer again** — you can point agents at this hash directly. Register a NEW offer only if your service/price differs from kenoodl's.
+
+**Before registering, set your registry target:**
+
+```bash
+# Path A (canonical mainnet registry):
+export REGISTRY_ADDRESS=0x359784adD213F2097D0F071310e82cD8f9a2A909
+export RPC_URL=https://mainnet.base.org
+
+# Path B (your own Sepolia deploy from Step 3):
+# export REGISTRY_ADDRESS=0x<your deployed registry address>
+# export RPC_URL=base_sepolia
+```
+
+Register the offer (the same command works for both paths — only the environment variables differ):
 
 ```bash
 cast send $REGISTRY_ADDRESS \
   "registerOffer(bytes)" \
-  "0x$(echo -n '{"amount":"10000000000000000","maxLatency":300,"maxRetries":3,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' | xxd -p | tr -d '\n')" \
-  --rpc-url base_sepolia \
+  "0x$(echo -n '{"amount":"1000000","token":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","maxLatency":300,"maxRetries":3,"maxContextChars":45000,"serviceType":"synthesis","termsHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' | xxd -p | tr -d '\n')" \
+  --rpc-url $RPC_URL \
   --private-key $DEPLOY_KEY
 ```
 
@@ -234,3 +273,4 @@ You have a door. Agents hit it. They do not cross because they cannot
 verify what they're paying for. Deploy these two contracts, add two HTTP
 headers and three JSON fields, and agents can verify terms in one eth_call
 before signing. Your door is now walkable. Ship.
+
