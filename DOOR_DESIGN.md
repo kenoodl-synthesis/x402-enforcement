@@ -49,22 +49,35 @@ An offer is a short JSON document that describes exactly what you're selling:
 
 ```json
 {
-  "amount": "10000000000000000",
+  "amount": "1000000",
+  "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   "maxLatency": 300,
   "maxRetries": 3,
+  "maxContextChars": 45000,
   "serviceType": "synthesis",
   "termsHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
 }
 ```
 
 - **amount**: the price in the smallest unit of the token (wei for ETH, or the
-  token's base unit for USDC)
+  token's base unit for USDC — the example above shows 1 USDC)
+- **token**: the ERC-20 contract address of the payment token
+  (`0x0000000000000000000000000000000000000000` for native ETH)
 - **maxLatency**: the longest you are willing to wait before the service is
   considered late (in seconds)
 - **maxRetries**: how many times the service can retry before it gives up
+- **maxContextChars**: the maximum input payload size the offer commits to.
+  Required for flat-rate offers to prevent price arbitrage — without it, an
+  agent could send arbitrarily large contexts at a fixed price
 - **serviceType**: a short string identifying what you're selling
 - **termsHash**: a 32-byte hash of any service-specific terms the general
   schema doesn't cover (usage limits, refund conditions, domain rules)
+
+**Field order is load-bearing.** The `offerHash` is Keccak-256 of the byte-exact
+JSON with fields in the exact order above and no whitespace. If you reorder
+or add whitespace you produce a different hash and the offer will not match
+anything already registered. Always serialize your offer using a stable
+encoder that preserves field order.
 
 You take the Keccak-256 hash of the exact JSON bytes. That hash becomes the
 **offerHash**. It is a 32-byte fingerprint of your offer that cannot be
@@ -116,6 +129,78 @@ In production, this proof is a Groth16 SNARK compiled from a standardized
 circuit. During development and testing, you can use a stub proof (the
 reference `StubSettlementVerifier` accepts any well-structured input) until
 the real circuit is audited and deployed.
+
+---
+
+## 5. Promise the refund guarantee
+
+The four components above make an agent's terms verifiable before payment
+and verifiable after delivery. But they do not, by themselves, tell the
+agent what happens **if the seller's side fails internally after payment is
+verified but before delivery completes**. That failure mode is real and
+common — a database error, an upstream rate limit, a queue worker crash, an
+out-of-balance account. If the agent has already paid when that failure
+occurs, its funds are stranded unless the seller explicitly handles the
+failure path.
+
+**A walkable door must commit to a refund guarantee.** Specifically:
+
+> **Payment + delivery OR payment + automatic on-chain refund.
+> Never just payment with no outcome.**
+
+The refund guarantee turns an agent's payment from a one-way commitment
+into a financially reversible action on any seller-side failure. It is the
+piece that makes the agent's utility function resolve positive *even under
+worst-case failure paths*, because the agent knows it cannot lose funds to
+an internal seller error.
+
+### How to implement
+
+When your service detects that the delivery cannot be completed for any
+reason internal to your side (errors, timeouts, overload, budget
+exhaustion), your endpoint must:
+
+1. **Record the failure** with a reference to the original payment tx hash
+2. **Trigger an on-chain refund transaction** sending the exact original
+   payment amount back to the agent's paying wallet address
+3. **Expose the refund tx hash** to the agent via the same polling/status
+   endpoint the agent is already using (e.g., a `refundTxHash` field on
+   an error status response, plus a boolean `refunded: true`)
+4. **Emit an on-chain refund event** so third-party auditors can index
+   failed-then-refunded flows as a distinct state from both
+   successful-delivery and unsettled
+
+The refund typically arrives on-chain within 30 to 120 seconds of the
+original error being recorded. Agents waiting for a response should poll
+for up to 5 minutes end-to-end before considering the outcome unknown.
+
+### How to advertise
+
+The refund guarantee must be advertised in the same places the offer is
+advertised, so agents see the full commitment before signing any payment:
+
+1. **In the 402 response body** — a `refund_guarantee` field describing the
+   promise, the timing budget, and how agents detect refunds
+2. **In the `.well-known/ai.json` discovery surface** — so agents crawling
+   for services see the guarantee before they even fetch the 402 response
+3. **In the reference repo README** — so any builder inspecting your spec
+   sees the guarantee as part of the design, not an optional extra
+
+### Why this is part of the door, not an extra
+
+Without the refund guarantee, the refund path is bilateral trust. The
+agent must believe the seller will voluntarily refund on failure. That
+trust is exactly what the primitive was designed to eliminate. A door
+that commits to terms verifiably via `OfferRegistry` but does not commit
+to refund verifiably is still asking the agent to trust the seller's
+voluntary behavior on the failure path. The math at the agent's doorway
+does not fully resolve positive until the worst-case outcome is also
+cryptographically bounded.
+
+Including the refund guarantee as a first-class pattern requirement
+makes the door **financially reversible under any seller-side failure**,
+which completes the structural condition for autonomous agent crossing
+under a utility function that treats unverified paths as zero-value.
 
 ---
 
